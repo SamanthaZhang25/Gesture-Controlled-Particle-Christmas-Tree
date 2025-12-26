@@ -119,6 +119,7 @@ const Decoration: React.FC<{ item: DecorationItem }> = ({ item }) => {
 const Tree: React.FC<TreeProps> = ({ version, scale, isRelighting, onRelightEnd, decorations }) => {
   const pointsRef = useRef<THREE.Points>(null!);
   const lightPointsRef = useRef<THREE.Points>(null!);
+  const groupRef = useRef<THREE.Group>(null!);
   const relightProgress = useRef(0);
 
   const PARTICLE_COUNT = 5500;
@@ -183,12 +184,13 @@ const Tree: React.FC<TreeProps> = ({ version, scale, isRelighting, onRelightEnd,
   useFrame((state) => {
     const t = state.clock.getElapsedTime();
     const sway = Math.sin(t * 0.5) * 0.03;
-    if (pointsRef.current) pointsRef.current.rotation.y = sway;
+    if (groupRef.current) groupRef.current.rotation.y = sway;
+    
     if (lightPointsRef.current) {
-      lightPointsRef.current.rotation.y = sway;
       const sparkleFactor = isRelighting ? (1 + Math.sin(t * 15) * 0.5) * 3 : (1 + Math.sin(t * 4) * 0.2);
       lightPointsRef.current.material.size = 0.09 * sparkleFactor;
     }
+    
     if (isRelighting) {
       relightProgress.current += 0.02;
       if (relightProgress.current >= 1) {
@@ -200,23 +202,25 @@ const Tree: React.FC<TreeProps> = ({ version, scale, isRelighting, onRelightEnd,
 
   return (
     <group scale={scale}>
-      <StarMesh position={[0, 2.7, 0]} color={colors.star} isTop={true} scale={0.75} />
-      <mesh position={[0, -2.7, 0]}>
-        <cylinderGeometry args={[0.22, 0.38, 0.7]} />
-        <meshStandardMaterial color={colors.trunk} roughness={1} />
-      </mesh>
-      <points ref={pointsRef}>
-        <bufferGeometry><bufferAttribute attach="attributes-position" count={PARTICLE_COUNT} array={foliagePositions} itemSize={3} /></bufferGeometry>
-        <pointsMaterial size={0.038} color={colors.foliage} transparent opacity={0.75} />
-      </points>
-      <points ref={lightPointsRef}>
-        <bufferGeometry>
-          <bufferAttribute attach="attributes-position" count={LIGHT_COUNT} array={lightPositions} itemSize={3} />
-          <bufferAttribute attach="attributes-color" count={LIGHT_COUNT} array={lightColors} itemSize={3} />
-        </bufferGeometry>
-        <pointsMaterial vertexColors transparent opacity={1} blending={THREE.AdditiveBlending} depthWrite={false} sizeAttenuation={true} />
-      </points>
-      {decorations.map((d) => (<Decoration key={d.id} item={d} />))}
+      <group ref={groupRef}>
+        <StarMesh position={[0, 2.7, 0]} color={colors.star} isTop={true} scale={0.75} />
+        <mesh position={[0, -2.7, 0]}>
+          <cylinderGeometry args={[0.22, 0.38, 0.7]} />
+          <meshStandardMaterial color={colors.trunk} roughness={1} />
+        </mesh>
+        <points ref={pointsRef}>
+          <bufferGeometry><bufferAttribute attach="attributes-position" count={PARTICLE_COUNT} array={foliagePositions} itemSize={3} /></bufferGeometry>
+          <pointsMaterial size={0.038} color={colors.foliage} transparent opacity={0.75} />
+        </points>
+        <points ref={lightPointsRef}>
+          <bufferGeometry>
+            <bufferAttribute attach="attributes-position" count={LIGHT_COUNT} array={lightPositions} itemSize={3} />
+            <bufferAttribute attach="attributes-color" count={LIGHT_COUNT} array={lightColors} itemSize={3} />
+          </bufferGeometry>
+          <pointsMaterial vertexColors transparent opacity={1} blending={THREE.AdditiveBlending} depthWrite={false} sizeAttenuation={true} />
+        </points>
+        {decorations.map((d) => (<Decoration key={d.id} item={d} />))}
+      </group>
     </group>
   );
 };

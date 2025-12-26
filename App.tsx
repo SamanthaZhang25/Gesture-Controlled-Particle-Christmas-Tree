@@ -9,10 +9,11 @@ import { detectGestures } from './utils/gestureLogic';
 import Tree from './components/Tree';
 import HandOverlay from './components/HandOverlay';
 import DecorationSidebar, { DECORATIONS } from './components/DecorationSidebar';
-import { Sparkles, Heart, Hand, MousePointer2, Linkedin, Globe } from 'lucide-react';
+import { Sparkles, Heart, Hand, MousePointer2, Linkedin, Globe, Loader2 } from 'lucide-react';
 
 const i18n = {
   en: {
+    loading: 'Waking up the Christmas Magic...',
     edition: 'Edition',
     classic: 'Classic',
     pink: 'Pink',
@@ -30,6 +31,7 @@ const i18n = {
     dwellToSelect: 'Dwell to Select'
   },
   zh: {
+    loading: '正在唤醒圣诞魔力...',
     edition: '版本',
     classic: '经典',
     pink: '粉色',
@@ -50,11 +52,12 @@ const i18n = {
 
 const App: React.FC = () => {
   const videoRef = useRef<HTMLVideoElement>(null);
-  const results = useHandTracker(videoRef);
+  const { results, isLoading } = useHandTracker(videoRef);
   
   const [treeVersion, setTreeVersion] = useState<TreeVersion>(TreeVersion.CLASSIC);
   const [gesture, setGesture] = useState<GestureState | null>(null);
   const [scale, setScale] = useState(1);
+  const scaleRef = useRef(1); // Keep a ref to avoid frequent callback re-creations
   const [isRelighting, setIsRelighting] = useState(false);
   const [decorations, setDecorations] = useState<DecorationItem[]>([]);
   const [heldDecoration, setHeldDecoration] = useState<DecorationTemplate | null>(null);
@@ -70,15 +73,19 @@ const App: React.FC = () => {
   const MIN_SCALE = 0.8; 
   const MAX_SCALE = 2.8;
 
+  // Sync ref with state
+  useEffect(() => {
+    scaleRef.current = scale;
+  }, [scale]);
+
   const placeDecoration = useCallback((pos: [number, number, number]) => {
     if (!heldDecoration) return;
     
-    // Convert world position to tree-local position by dividing by current scale
-    // This ensures decorations stay attached to the same spot on the tree when it resizes
+    const currentScale = scaleRef.current;
     const localPos: [number, number, number] = [
-      pos[0] / scale,
-      pos[1] / scale,
-      pos[2] / scale
+      pos[0] / currentScale,
+      pos[1] / currentScale,
+      pos[2] / currentScale
     ];
 
     const newDec: DecorationItem = {
@@ -94,7 +101,7 @@ const App: React.FC = () => {
     dwellStartTime.current = null;
     lastTarget.current = null;
     if (window.navigator.vibrate) window.navigator.vibrate([40, 30, 40]);
-  }, [heldDecoration, scale]);
+  }, [heldDecoration]);
 
   useEffect(() => {
     if (results?.landmarks?.length > 0) {
@@ -104,8 +111,6 @@ const App: React.FC = () => {
       }, gesture);
       setGesture(newGesture);
 
-      // --- Updated Scaling Logic ---
-      // Only change scale if the hand is relatively centered in the screen
       const { x: hX, y: hY } = newGesture.handCenterPos;
       const isCentered = hX > 0.3 && hX < 0.7 && hY > 0.3 && hY < 0.7;
 
@@ -113,7 +118,6 @@ const App: React.FC = () => {
         const targetScale = Math.max(MIN_SCALE, MIN_SCALE + newGesture.palmOpenness * (MAX_SCALE - MIN_SCALE));
         setScale(prev => prev * 0.9 + targetScale * 0.1);
       }
-      // -----------------------------
 
       if (newGesture.isHeart && !isRelighting) {
         setIsRelighting(true);
@@ -141,12 +145,12 @@ const App: React.FC = () => {
         }
       } 
       else if (heldDecoration) {
-        const treeBaseY = -2.5 * scale;
-        const treeTopY = 2.5 * scale;
-        const currentY = wy;
-        if (currentY >= treeBaseY && currentY <= treeTopY) {
-          const hNorm = (currentY - treeBaseY) / (treeTopY - treeBaseY);
-          const maxRadius = 2.8 * scale;
+        const currentScale = scaleRef.current;
+        const treeBaseY = -2.5 * currentScale;
+        const treeTopY = 2.5 * currentScale;
+        if (wy >= treeBaseY && wy <= treeTopY) {
+          const hNorm = (wy - treeBaseY) / (treeTopY - treeBaseY);
+          const maxRadius = 2.8 * currentScale;
           const currentRadius = (1 - hNorm) * maxRadius;
           if (Math.abs(wx) <= currentRadius) currentTarget = 'tree';
         }
@@ -176,17 +180,23 @@ const App: React.FC = () => {
         lastTarget.current = currentTarget;
       }
     }
-  }, [results, isRelighting, heldDecoration, placeDecoration, scale]);
+  }, [results, isRelighting, heldDecoration, placeDecoration, gesture]);
 
   return (
     <div className="relative w-full h-screen bg-[#020308] overflow-hidden font-sans select-none text-white">
+      {isLoading && (
+        <div className="absolute inset-0 z-[100] bg-black flex flex-col items-center justify-center gap-6">
+          <Loader2 className="w-12 h-12 text-cyan-400 animate-spin" />
+          <p className="text-sm font-black tracking-[0.2em] text-white/60 animate-pulse">{t.loading}</p>
+        </div>
+      )}
+
       <video ref={videoRef} className="hidden" autoPlay playsInline muted />
       <div className="absolute inset-0 pointer-events-none">
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_50%,_#0a1a2a_0%,_transparent_100%)] opacity-50" />
         <div className="absolute top-0 w-full h-full bg-[url('https://www.transparenttextures.com/patterns/stardust.png')] opacity-20" />
       </div>
 
-      {/* Language Switcher - Top Right */}
       <div className="absolute top-6 right-6 z-30">
         <button 
           onClick={() => setLang(l => l === 'en' ? 'zh' : 'en')}
@@ -197,7 +207,6 @@ const App: React.FC = () => {
         </button>
       </div>
 
-      {/* Top Center Copyright */}
       <div className="absolute top-6 left-1/2 -translate-x-1/2 z-20 flex flex-col items-center gap-1">
         <div className="bg-white/5 backdrop-blur-xl border border-white/10 px-6 py-2 rounded-full flex items-center gap-4 shadow-2xl">
           <span className="text-[10px] font-black text-white/60 tracking-[0.2em] uppercase whitespace-nowrap">

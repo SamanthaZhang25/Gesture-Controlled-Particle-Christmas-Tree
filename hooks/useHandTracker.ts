@@ -2,18 +2,21 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { FilesetResolver, HandLandmarker } from '@mediapipe/tasks-vision';
 
+const MEDIAPIPE_VERSION = "0.10.11"; // Use a stable version
+
 export const useHandTracker = (videoRef: React.RefObject<HTMLVideoElement>) => {
   const [landmarker, setLandmarker] = useState<HandLandmarker | null>(null);
   const [results, setResults] = useState<any>(null);
+  const [isLoading, setIsLoading] = useState(true);
   const requestRef = useRef<number>();
   const streamRef = useRef<MediaStream | null>(null);
 
-  // Initialize MediaPipe Landmarker
   useEffect(() => {
     const initLandmarker = async () => {
       try {
+        setIsLoading(true);
         const vision = await FilesetResolver.forVisionTasks(
-          "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.0/wasm"
+          `https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${MEDIAPIPE_VERSION}/wasm`
         );
         const hl = await HandLandmarker.createFromOptions(vision, {
           baseOptions: {
@@ -27,14 +30,15 @@ export const useHandTracker = (videoRef: React.RefObject<HTMLVideoElement>) => {
           minHandTrackingConfidence: 0.5
         });
         setLandmarker(hl);
+        setIsLoading(false);
       } catch (error) {
         console.error("Failed to initialize HandLandmarker:", error);
+        setIsLoading(false);
       }
     };
     initLandmarker();
   }, []);
 
-  // Initialize Camera Stream
   useEffect(() => {
     const startCamera = async () => {
       if (videoRef.current) {
@@ -50,7 +54,7 @@ export const useHandTracker = (videoRef: React.RefObject<HTMLVideoElement>) => {
           streamRef.current = stream;
           videoRef.current.srcObject = stream;
           videoRef.current.onloadedmetadata = () => {
-            videoRef.current?.play();
+            videoRef.current?.play().catch(console.error);
           };
         } catch (err) {
           console.error("Error accessing camera: ", err);
@@ -67,17 +71,16 @@ export const useHandTracker = (videoRef: React.RefObject<HTMLVideoElement>) => {
     };
   }, [videoRef]);
 
-  // Detection Loop
-  const detect = () => {
-    if (landmarker && videoRef.current && videoRef.current.readyState >= 2) {
-      const startTimeMs = performance.now();
-      const result = landmarker.detectForVideo(videoRef.current, startTimeMs);
-      setResults(result);
-    }
-    requestRef.current = requestAnimationFrame(detect);
-  };
-
   useEffect(() => {
+    const detect = () => {
+      if (landmarker && videoRef.current && videoRef.current.readyState >= 2) {
+        const startTimeMs = performance.now();
+        const result = landmarker.detectForVideo(videoRef.current, startTimeMs);
+        setResults(result);
+      }
+      requestRef.current = requestAnimationFrame(detect);
+    };
+
     requestRef.current = requestAnimationFrame(detect);
     return () => {
       if (requestRef.current) {
@@ -86,5 +89,5 @@ export const useHandTracker = (videoRef: React.RefObject<HTMLVideoElement>) => {
     };
   }, [landmarker]);
 
-  return results;
+  return { results, isLoading };
 };
