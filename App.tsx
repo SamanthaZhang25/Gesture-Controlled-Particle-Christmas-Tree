@@ -57,7 +57,7 @@ const App: React.FC = () => {
   const [treeVersion, setTreeVersion] = useState<TreeVersion>(TreeVersion.CLASSIC);
   const [gesture, setGesture] = useState<GestureState | null>(null);
   const [scale, setScale] = useState(1);
-  const scaleRef = useRef(1); // Keep a ref to avoid frequent callback re-creations
+  const scaleRef = useRef(1);
   const [isRelighting, setIsRelighting] = useState(false);
   const [decorations, setDecorations] = useState<DecorationItem[]>([]);
   const [heldDecoration, setHeldDecoration] = useState<DecorationTemplate | null>(null);
@@ -73,7 +73,6 @@ const App: React.FC = () => {
   const MIN_SCALE = 0.8; 
   const MAX_SCALE = 2.8;
 
-  // Sync ref with state
   useEffect(() => {
     scaleRef.current = scale;
   }, [scale]);
@@ -81,6 +80,7 @@ const App: React.FC = () => {
   const placeDecoration = useCallback((pos: [number, number, number]) => {
     if (!heldDecoration) return;
     
+    // 使用 ref 获取当前最新的缩放，防止异步闭包问题
     const currentScale = scaleRef.current;
     const localPos: [number, number, number] = [
       pos[0] / currentScale,
@@ -111,12 +111,13 @@ const App: React.FC = () => {
       }, gesture);
       setGesture(newGesture);
 
+      // 手掌在屏幕 30% 到 70% 的中心区域时才生效
       const { x: hX, y: hY } = newGesture.handCenterPos;
       const isCentered = hX > 0.3 && hX < 0.7 && hY > 0.3 && hY < 0.7;
 
       if (isCentered) {
         const targetScale = Math.max(MIN_SCALE, MIN_SCALE + newGesture.palmOpenness * (MAX_SCALE - MIN_SCALE));
-        setScale(prev => prev * 0.9 + targetScale * 0.1);
+        setScale(prev => prev * 0.85 + targetScale * 0.15); // 稍微加快平滑过渡速度
       }
 
       if (newGesture.isHeart && !isRelighting) {
@@ -124,6 +125,7 @@ const App: React.FC = () => {
         if (window.navigator.vibrate) window.navigator.vibrate(50);
       }
 
+      // Peace 手势清空并重置
       if (newGesture.isPeace) {
         setScale(1);
         setDecorations([]);

@@ -2,7 +2,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { FilesetResolver, HandLandmarker } from '@mediapipe/tasks-vision';
 
-const MEDIAPIPE_VERSION = "0.10.11"; // Use a stable version
+const MEDIAPIPE_VERSION = "0.10.11"; 
 
 export const useHandTracker = (videoRef: React.RefObject<HTMLVideoElement>) => {
   const [landmarker, setLandmarker] = useState<HandLandmarker | null>(null);
@@ -15,9 +15,12 @@ export const useHandTracker = (videoRef: React.RefObject<HTMLVideoElement>) => {
     const initLandmarker = async () => {
       try {
         setIsLoading(true);
+        console.log("Initializing MediaPipe HandLandmarker...");
+        
         const vision = await FilesetResolver.forVisionTasks(
           `https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${MEDIAPIPE_VERSION}/wasm`
         );
+        
         const hl = await HandLandmarker.createFromOptions(vision, {
           baseOptions: {
             modelAssetPath: `https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task`,
@@ -29,10 +32,13 @@ export const useHandTracker = (videoRef: React.RefObject<HTMLVideoElement>) => {
           minHandPresenceConfidence: 0.5,
           minHandTrackingConfidence: 0.5
         });
+        
         setLandmarker(hl);
         setIsLoading(false);
+        console.log("MediaPipe initialized successfully.");
       } catch (error) {
-        console.error("Failed to initialize HandLandmarker:", error);
+        console.error("CRITICAL: Failed to initialize HandLandmarker:", error);
+        // 如果 GPU 失败，尝试回退到 CPU
         setIsLoading(false);
       }
     };
@@ -57,7 +63,7 @@ export const useHandTracker = (videoRef: React.RefObject<HTMLVideoElement>) => {
             videoRef.current?.play().catch(console.error);
           };
         } catch (err) {
-          console.error("Error accessing camera: ", err);
+          console.error("Camera access denied or failed: ", err);
         }
       }
     };
@@ -74,9 +80,13 @@ export const useHandTracker = (videoRef: React.RefObject<HTMLVideoElement>) => {
   useEffect(() => {
     const detect = () => {
       if (landmarker && videoRef.current && videoRef.current.readyState >= 2) {
-        const startTimeMs = performance.now();
-        const result = landmarker.detectForVideo(videoRef.current, startTimeMs);
-        setResults(result);
+        try {
+          const startTimeMs = performance.now();
+          const result = landmarker.detectForVideo(videoRef.current, startTimeMs);
+          setResults(result);
+        } catch (e) {
+          console.error("Inference error:", e);
+        }
       }
       requestRef.current = requestAnimationFrame(detect);
     };
