@@ -57,7 +57,6 @@ const App: React.FC = () => {
   const [treeVersion, setTreeVersion] = useState<TreeVersion>(TreeVersion.CLASSIC);
   const [gesture, setGesture] = useState<GestureState | null>(null);
   const [scale, setScale] = useState(1);
-  const scaleRef = useRef(1);
   const [isRelighting, setIsRelighting] = useState(false);
   const [decorations, setDecorations] = useState<DecorationItem[]>([]);
   const [heldDecoration, setHeldDecoration] = useState<DecorationTemplate | null>(null);
@@ -68,24 +67,23 @@ const App: React.FC = () => {
   const dwellStartTime = useRef<number | null>(null);
   const lastTarget = useRef<string | null>(null);
 
+  // Use refs to avoid stale closures in the high-frequency MediaPipe effect
+  const scaleRef = useRef(1);
+  const gestureRef = useRef<GestureState | null>(null);
+
   const t = i18n[lang];
 
   const MIN_SCALE = 0.8; 
   const MAX_SCALE = 2.8;
 
-  useEffect(() => {
-    scaleRef.current = scale;
-  }, [scale]);
-
-  const placeDecoration = useCallback((pos: [number, number, number]) => {
+  const placeDecoration = useCallback((pos: [number, number, number], activeScale: number) => {
     if (!heldDecoration) return;
     
-    // 使用 ref 获取当前最新的缩放，防止异步闭包问题
-    const currentScale = scaleRef.current;
+    // Use the specific scale calculated for this frame
     const localPos: [number, number, number] = [
-      pos[0] / currentScale,
-      pos[1] / currentScale,
-      pos[2] / currentScale
+      pos[0] / activeScale,
+      pos[1] / activeScale,
+      pos[2] / activeScale
     ];
 
     const newDec: DecorationItem = {
@@ -108,31 +106,40 @@ const App: React.FC = () => {
       const newGesture = detectGestures({
         landmarks: results.landmarks[0],
         worldLandmarks: results.worldLandmarks[0]
-      }, gesture);
+      }, gestureRef.current);
+      
+      gestureRef.current = newGesture;
       setGesture(newGesture);
 
-      // 手掌在屏幕 30% 到 70% 的中心区域时才生效
+      // 1. Handle Scaling
       const { x: hX, y: hY } = newGesture.handCenterPos;
       const isCentered = hX > 0.3 && hX < 0.7 && hY > 0.3 && hY < 0.7;
 
+      let currentFrameScale = scaleRef.current;
       if (isCentered) {
         const targetScale = Math.max(MIN_SCALE, MIN_SCALE + newGesture.palmOpenness * (MAX_SCALE - MIN_SCALE));
-        setScale(prev => prev * 0.85 + targetScale * 0.15); // 稍微加快平滑过渡速度
+        // Calculate new scale for THIS frame logic immediately
+        currentFrameScale = currentFrameScale * 0.85 + targetScale * 0.15;
+        setScale(currentFrameScale);
+        scaleRef.current = currentFrameScale;
       }
 
+      // 2. Handle Light Reset (Heart)
       if (newGesture.isHeart && !isRelighting) {
         setIsRelighting(true);
         if (window.navigator.vibrate) window.navigator.vibrate(50);
       }
 
-      // Peace 手势清空并重置
+      // 3. Reset Tree (Peace)
       if (newGesture.isPeace) {
         setScale(1);
+        scaleRef.current = 1;
         setDecorations([]);
         setHeldDecoration(null);
         if (window.navigator.vibrate) window.navigator.vibrate(20);
       }
 
+      // 4. Hit Detection for UI & Tree
       const { x, y } = newGesture.indexFingerPos;
       const { x: wx, y: wy } = newGesture.worldIndexPos;
       let currentTarget: string | null = null;
@@ -147,12 +154,12 @@ const App: React.FC = () => {
         }
       } 
       else if (heldDecoration) {
-        const currentScale = scaleRef.current;
-        const treeBaseY = -2.5 * currentScale;
-        const treeTopY = 2.5 * currentScale;
+        // Use currentFrameScale so hit-box matches visual tree exactly
+        const treeBaseY = -2.5 * currentFrameScale;
+        const treeTopY = 2.5 * currentFrameScale;
         if (wy >= treeBaseY && wy <= treeTopY) {
           const hNorm = (wy - treeBaseY) / (treeTopY - treeBaseY);
-          const maxRadius = 2.8 * currentScale;
+          const maxRadius = 2.8 * currentFrameScale;
           const currentRadius = (1 - hNorm) * maxRadius;
           if (Math.abs(wx) <= currentRadius) currentTarget = 'tree';
         }
@@ -166,6 +173,7 @@ const App: React.FC = () => {
         const threshold = currentTarget.startsWith('sidebar') ? 600 : 1200;
         const progress = Math.min(elapsed / threshold, 1);
         setDwellProgress(progress);
+        
         if (progress >= 1) {
           if (currentTarget.startsWith('sidebar')) {
             setHeldDecoration(DECORATIONS[hoverIdx!]);
@@ -173,7 +181,7 @@ const App: React.FC = () => {
             setDwellProgress(0);
             lastTarget.current = null;
           } else if (currentTarget === 'tree') {
-            placeDecoration([wx, wy, 0]);
+            placeDecoration([wx, wy, 0], currentFrameScale);
           }
         }
       } else {
@@ -182,14 +190,14 @@ const App: React.FC = () => {
         lastTarget.current = currentTarget;
       }
     }
-  }, [results, isRelighting, heldDecoration, placeDecoration, gesture]);
+  }, [results, isRelighting, heldDecoration, placeDecoration]);
 
   return (
     <div className="relative w-full h-screen bg-[#020308] overflow-hidden font-sans select-none text-white">
       {isLoading && (
         <div className="absolute inset-0 z-[100] bg-black flex flex-col items-center justify-center gap-6">
           <Loader2 className="w-12 h-12 text-cyan-400 animate-spin" />
-          <p className="text-sm font-black tracking-[0.2em] text-white/60 animate-pulse">{t.loading}</p>
+          <p className="text-sm font-black tracking-[0.2em] text-white/60 animate-pulse uppercase">{t.loading}</p>
         </div>
       )}
 
